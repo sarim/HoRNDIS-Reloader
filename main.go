@@ -2,11 +2,13 @@ package main
 
 import (
 	"C"
-	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
+import "strconv"
 
 const Kext = "/System/Library/Extensions/HoRNDIS.kext"
 
@@ -14,7 +16,7 @@ var c = make(chan int, 10)
 
 //export DeviceAddedCB
 func DeviceAddedCB(vendorID, productID int32, name *C.char) {
-	fmt.Printf("Name: %s, Vendor: %d, Product %d\n", C.GoString(name), vendorID, productID)
+	log.Printf("Inserted Device - Name: %s, Vendor: 0x%04x, Product: 0x%04x\n", C.GoString(name), vendorID, productID)
 	c <- 1
 }
 
@@ -27,32 +29,57 @@ func DeviceAddedDebounced() {
 		case <-ct:
 			go func() {
 				time.Sleep(time.Second)
-				fmt.Println("Unloading Kext")
-				exec.Command("/sbin/kextunload", Kext).CombinedOutput()
+				err := exec.Command("/sbin/kextunload", Kext).Run()
+				if err != nil {
+					log.Println("Unloading Kext Failed")
+				} else {
+					log.Println("Unloading Kext Success")
+				}
 				time.Sleep(time.Second)
-				fmt.Println("Loading Kext")
-				exec.Command("/sbin/kextload", Kext).CombinedOutput()
+				err = exec.Command("/sbin/kextload", Kext).Run()
+				if err != nil {
+					log.Println("Loading Kext Failed")
+				} else {
+					log.Println("Loading Kext Success")
+				}
 			}()
 		}
 	}
 }
 
 func main() {
-	vendorID := 0x2717
-	productID := 0x0388
 
 	if os.Geteuid() != 0 {
-		panic("Root needed for kextload/unload")
+		log.Fatal("Root needed for kextload/unload")
 	}
 
 	go DeviceAddedDebounced()
 
-	fmt.Println("HoRNDIS Reloader by Gittu")
-
 	InitRunLoop()
 
-	AddDeviceMatch(vendorID, productID)
-	// AddDeviceMatch(0, 0)
+	if len(os.Args) < 2 {
+		log.Fatal("At least one vendor:product needed as argument")
+	}
+	args := os.Args[1:]
+	for _, v := range args {
+		a := strings.Split(v, ":")
+		if len(a) != 2 {
+			log.Fatal("Invalid vendor:product arg - %s", v)
+		}
+		vendorID, err := strconv.ParseInt(a[0], 0, 32)
+		if err != nil {
+			log.Fatal("Invalid vendor arg - %s", a[0])
+		}
+		productID, err := strconv.ParseInt(a[1], 0, 32)
+		if err != nil {
+			log.Fatal("Invalid product arg - %s", a[1])
+		}
+
+		log.Printf("Listening for device 0x%04x:0x%04x", vendorID, productID)
+		AddDeviceMatch(int(vendorID), int(productID))
+	}
+
+	log.Println("HoRNDIS Reloader by Gittu Started")
 
 	RunLoopRun()
 }

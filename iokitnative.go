@@ -8,6 +8,7 @@ package main
 #include <IOKit/IOMessage.h>
 #include <IOKit/IOCFPlugIn.h>
 #include <IOKit/usb/IOUSBLib.h>
+#include <os/log.h>
 
 // This vars are here in C because Go can't call c MACRO.
 // Also CFSTR need compile time string.
@@ -20,6 +21,10 @@ CFRunLoopRef gRunLoop;
 CFRunLoopSourceRef runLoopSource;
 
 extern void DeviceAddedCB(int32_t p0, int32_t p1, char* p2);
+
+void macLog(char *txt) {
+    os_log(OS_LOG_DEFAULT, "%{public}s", txt);
+}
 
 void initRunLoop()
 {
@@ -71,7 +76,23 @@ bool addDeviceMatch(CFMutableDictionaryRef matchingDict)
 
 */
 import "C"
-import "unsafe"
+import (
+	"log"
+	"unsafe"
+)
+
+type logWriter struct {
+}
+
+func (writer logWriter) Write(bytes []byte) (int, error) {
+	C.macLog(C.CString(string(bytes)))
+	return len(bytes), nil
+}
+
+func init() {
+	log.SetFlags(0)
+	log.SetOutput(new(logWriter))
+}
 
 func InitRunLoop() {
 	C.initRunLoop()
@@ -113,6 +134,6 @@ func AddDeviceMatch(vendorID, productID int) {
 	r := C.addDeviceMatch(matchingDict)
 
 	if r == false {
-		panic("IOServiceAddMatchingNotification Failed")
+		log.Panic("IOServiceAddMatchingNotification Failed")
 	}
 }
